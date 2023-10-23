@@ -1,4 +1,6 @@
 # Requires telegram and python-telegram-bot
+# Set a cronjob as the following:
+# 0 10 * * 1-5 /usr/bin/python /path/to/mensabot.py
 import telegram
 import time
 import asyncio
@@ -15,7 +17,6 @@ with open('config.yaml') as f:
     config = yaml.safe_load(f)
 
 DEBUG_MODE = 0
-TIME_TO_SEND = 10
 
 MENSA_URL = "https://swp.webspeiseplan.de/index.php?token=55ed21609e26bbf68ba2b19390bf7961&model=menu&location=9601&languagetype=1&_=1696321056188" # Please be a static token!
 
@@ -46,7 +47,7 @@ def buildMealsMessage(mealObjects):
         message += buildMealMessage(mealObject) + "\n\n"
     return message
 
-async def buildMenuMessage(day, month):
+async def buildMenuMessage():
     try:
         json_pre = requests.get(MENSA_URL, headers={"Referer": "https://swp.webspeiseplan.de/Menu"}).text
         menu_json = json.loads(json_pre)
@@ -72,28 +73,12 @@ async def buildMenuMessage(day, month):
 
 
 async def main():
-    print("started")
-    sent = False
-
-    while True:
-        localtime = time.localtime(time.time())
-        if 0 <= localtime.tm_wday <= 4:
-
-            if localtime.tm_hour == TIME_TO_SEND and sent == False:
-                sent = True
-
-                menu_message = await buildMenuMessage(localtime.tm_mday, localtime.tm_mon)
-                if menu_message:
-                    print(menu_message)
-                    await sendMessage(menu_message)
-                await sendMensapoll()
-                print("Poll send")
-
-            if localtime.tm_hour == TIME_TO_SEND+1 and sent == True:
-                print("reset")
-                sent = False
-
-        await asyncio.sleep(600)
+    menu_message = await buildMenuMessage()
+    if menu_message:
+        print(menu_message)
+        await sendMessage(menu_message)
+    await sendMensapoll()
+    print("Poll send")
 
 
 async def manualMessage():
