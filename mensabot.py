@@ -5,11 +5,8 @@ import asyncio
 import os
 import yaml
 
-from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-
-from bs4 import BeautifulSoup
+import requests
+import json
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
@@ -17,8 +14,10 @@ os.chdir(script_dir)
 with open('config.yaml') as f:
     config = yaml.safe_load(f)
 
-DEBUG_MODE = 1
+DEBUG_MODE = 0
 TIME_TO_SEND = 10
+
+MENSA_URL = "https://swp.webspeiseplan.de/index.php?token=55ed21609e26bbf68ba2b19390bf7961&model=menu&location=9601&languagetype=1&_=1696321056188" # Please be a static token!
 
 bot = telegram.Bot(token=config['TOKEN'])
 chat_id_group = config['chat_id_group']
@@ -29,18 +28,15 @@ if DEBUG_MODE == 1:
 else:
     chat_id = chat_id_group
 
-
 async def sendMensapoll():
     await bot.send_poll(chat_id, "Mensa?", ["11:45", "12:00", "12:15", "12:25", "12:35", "12:45", "nein"],
                         is_anonymous=False, type='regular', allows_multiple_answers=True)
 
-
 async def sendMessage(message):
     await bot.send_message(chat_id, message)
 
-
 def buildMealMessage(mealObject):
-    message = mealObject['categoryName'] + " €" + mealObject['price'] + " " + mealObject['diet'] + "\n"
+    message = mealObject['categoryName'] + " €" + "{:.2f}".format(mealObject['price']) + " " + mealObject['diet'] + "\n"
     message += mealObject['mealName']
     return message
 
@@ -52,37 +48,23 @@ def buildMealsMessage(mealObjects):
 
 async def buildMenuMessage(day, month):
     try:
-        options = webdriver.FirefoxOptions()
-        options.add_argument("--headless")
-        options.add_argument("window-size=1100,600")
-
-        profile_path = (r"./MENSABOT_PROFILE")
-        options.add_argument("-profile")
-        options.add_argument(profile_path)
-
-        service = webdriver.FirefoxService(executable_path=r'./geckodriver')
-        driver = webdriver.Firefox(options=options, service=service)
-        
-        driver.set_window_size(1100, 600)
-        driver.get('https://swp.webspeiseplan.de/Menu')
-        time.sleep(20)
-        source = driver.page_source
-        soup = BeautifulSoup(source, 'html.parser')
-        meals = soup.find_all(class_="meal-wrapper")
+        json_pre = requests.get(MENSA_URL, headers={"Referer": "https://swp.webspeiseplan.de/Menu"}).text
+        menu_json = json.loads(json_pre)
+        menu = menu_json['content'][0]['speiseplanGerichtData']
+        today = time.strftime("%Y-%m-%d")
         mealObjects = []
-        for meal in meals:
-            # print(meal.prettify())
+        for meal in menu:
             mealObject = {}
-            mealObject['categoryName'] = meal.find(class_="categoryName").get_text()
-            if mealObject['categoryName'] == "Salattheke":
-                continue
-            mealObject['mealName'] = meal.find(class_="mealNameWrapper").get_text().replace("\n", " ")
-            mealObject['diet'] = "🌱" if meal.find(class_="feature-69") is not None else "🥛🥚" if meal.find(class_="feature-68") else ""
-            mealObject['price'] = meal.find(class_="price-value").get_text().replace(" €", "")
-            mealObjects.append(mealObject)
+            if meal['speiseplanAdvancedGericht']['datum'][:10] == today:
+                meal_category = meal['speiseplanAdvancedGericht']['gerichtkategorieID']
+                if meal_category != 112: # ignore Salattheke
+                    mealObject['categoryName'] = 'Angebot ' + str(meal_category - 148) if meal_category != 117 else 'Aktionsessen'
+                    mealObject['mealName'] = meal['speiseplanAdvancedGericht']['gerichtname'].replace("\n", " ")
+                    mealObject['diet'] = "🌱" if '69' in meal['gerichtmerkmaleIds'] else "🥛🥚" if '68' in meal['gerichtmerkmaleIds'] else ""
+                    mealObject['price'] = meal['zusatzinformationen']['mitarbeiterpreisDecimal2']
+                    mealObjects.append(mealObject)
 
         message = buildMealsMessage(mealObjects)
-        driver.quit()
         return message
     except Exception as e:
         print("An exception occurred: " + str(e))
