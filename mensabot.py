@@ -46,19 +46,23 @@ def buildMealsMessage(mealObjects):
         message += mealObject['mealName'] + "\n\n"
     return message
 
+# https://swp.webspeiseplan.de/Menu
 async def buildMenuMessage(mensa, today = None):
     try:
         with open("mensen/" + mensa + ".json") as f:
             mensa_data = json.load(f)
-        mensa_url = f"https://swp.webspeiseplan.de/index.php?token=55ed21609e26bbf68ba2b19390bf7961&model=menu&location={mensa_data['location']}&languagetype=1&_=1696321056188" # Please be a static token!
+        mensa_url = f"https://swp.webspeiseplan.de/index.php?token=55ed21609e26bbf68ba2b19390bf7961&model=menu&location={mensa_data['location']}&languagetype=1&_=1731072393658" # Please be a static token!
         json_pre = requests.get(mensa_url, headers={"Referer": "https://swp.webspeiseplan.de/Menu"}).text
         menu_json = json.loads(json_pre)
-        menu = menu_json['content'][0]['speiseplanGerichtData']
+        for i, element in enumerate(menu_json['content']):
+            if element['speiseplanAdvanced']['titel'] == "Mittagessen":
+                menu = menu_json['content'][i]['speiseplanGerichtData']
+                break
         if today is None:
             today = time.strftime("%Y-%m-%d")
         mealObjects = []
         if DEBUG_MODE == 1:
-            json.dump(menu, open('menu.json', 'w'))
+            json.dump(menu, open(f'menu{mensa}.json', 'w'))
         for meal in menu:
             mealObject = {}
             if meal['speiseplanAdvancedGericht']['datum'][:10] == today:
@@ -91,13 +95,14 @@ async def filmuni(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main(context: ContextTypes.DEFAULT_TYPE):
     menu_message = await buildMenuMessage("Griebnitzsee")
-    for file in os.listdir('./chat_configs'):
-        with open(f'./chat_configs/{file}', 'r') as f:
-            data = json.load(f)
-            if menu_message:
-                await context.bot.send_message(data['chat_id'], menu_message)
-            if data['send_poll']:
-                await sendMensapoll(context, data['chat_id'], data['poll_options'])
+    if not DEBUG_MODE:
+        for file in os.listdir('./chat_configs'):
+            with open(f'./chat_configs/{file}', 'r') as f:
+                data = json.load(f)
+                if menu_message:
+                    await context.bot.send_message(data['chat_id'], menu_message)
+                if data['send_poll']:
+                    await sendMensapoll(context, data['chat_id'], data['poll_options'])
     
 async def main2(context: ContextTypes.DEFAULT_TYPE):
     print("WILDO")
@@ -112,7 +117,7 @@ if __name__ == '__main__':
                    .defaults(defaults)
                    .build())
     if DEBUG_MODE == 1:
-        application.job_queue.run_daily(main, time=datetime.time(hour=13, minute=58), days=(0, 1, 2, 3, 4, 5), chat_id=chat_id_debug)
+        application.job_queue.run_daily(main, time=datetime.time(hour=14, minute=41), days=(0, 1, 2, 3, 4, 5), chat_id=chat_id_debug)
     else:
         application.job_queue.run_daily(main, time=datetime.time(hour=9, minute=30), days=(1, 2, 3, 4, 5))
     application.add_handler(CommandHandler(["filmuni"], filmuni))
